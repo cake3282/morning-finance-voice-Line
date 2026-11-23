@@ -11,7 +11,6 @@ import feedparser
 import requests
 
 LINE_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-LINE_USER_ID = os.environ["LINE_USER_ID"]
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 AUDIO_PUBLIC_URL = os.environ.get("AUDIO_PUBLIC_URL", "")
 
@@ -181,8 +180,8 @@ async def text_to_speech(text: str, mp3_path: str = "briefing.mp3") -> None:
 
 
 def send_line(text: str, audio_url: str = "") -> None:
-    log("開始推播至 LINE...")
-    url = "https://api.line.me/v2/bot/message/push"
+    log("開始廣播至 LINE...")
+    url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_TOKEN}",
@@ -197,10 +196,10 @@ def send_line(text: str, audio_url: str = "") -> None:
             "duration": 180000,
         })
 
-    payload = {"to": LINE_USER_ID, "messages": messages}
+    payload = {"messages": messages}
     resp = requests.post(url, headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
-    log("LINE 訊息推播成功！")
+    log("LINE 訊息廣播成功！")
 
 
 def main() -> None:
