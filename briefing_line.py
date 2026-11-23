@@ -145,8 +145,8 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 近期財經新聞與摘要：
 {news_digest}
 """
-    # 修正模型名稱，優先使用穩定的 2.0-flash 與 1.5-flash
-    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    # 使用 3.5 系列模型
+    models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash"]
 
     for model_name in models_to_try:
         for attempt in range(2):
@@ -188,7 +188,7 @@ def send_line(text: str, audio_url: str = "") -> None:
         "Authorization": f"Bearer {LINE_TOKEN}",
     }
 
-    # 精準控制為 2 則訊息：1 則文字 + 1 則語音
+    # 僅發送 1 則文字 + 1 則語音，共 2 則訊息
     messages = [{"type": "text", "text": text[:5000]}]
 
     if audio_url:
@@ -208,14 +208,12 @@ def main() -> None:
     now_tw = datetime.now(ZoneInfo("Asia/Taipei"))
     news_digest = fetch_headlines()
     script = generate_script(news_digest, now_tw)
-    
-    # 存檔供除錯或備份
+
     with open("briefing.txt", "w", encoding="utf-8") as f:
         f.write(script)
 
     asyncio.run(text_to_speech(script))
-    
-    # 若在流程中已傳入音訊網址則直接廣播
+
     if AUDIO_PUBLIC_URL:
         send_line(script, AUDIO_PUBLIC_URL)
     else:
