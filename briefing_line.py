@@ -10,6 +10,7 @@ import edge_tts
 import feedparser
 import requests
 from google import genai
+from google.genai import types
 
 LINE_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_USER_ID = os.environ["LINE_USER_ID"]
@@ -47,7 +48,7 @@ def fetch_headlines(limit: int = 10, summary_max_len: int = 150) -> str:
 
     for url in RSS_FEEDS:
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=15)
             feed = feedparser.parse(resp.content)
         except Exception as e:
             log(f"抓取 RSS 失敗 ({url}): {e}")
@@ -94,7 +95,7 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
     log("開始呼叫 Gemini 生成晨報稿...")
     client = genai.Client(
         api_key=GEMINI_API_KEY,
-        http_options={"timeout": 30},
+        http_options=types.HttpOptions(timeout=60),
     )
     weekday_map = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
     today_str = now_tw.strftime("%Y年%m月%d日")
@@ -129,7 +130,7 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
     models_to_try = ["gemini-3.5-flash", "gemini-3.5-lite", "gemini-3.8-flash"]
 
     for model_name in models_to_try:
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 log(f"嘗試模型 {model_name}（第 {attempt + 1} 次）...")
                 resp = client.models.generate_content(
@@ -142,8 +143,8 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
                 log(f"模型 {model_name} 成功產稿！")
                 return clean_script_for_weekend(raw_text, is_weekend)
             except Exception as e:
-                log(f"模型 {model_name} 失敗: {e}")
-                time.sleep(2)
+                log(f"模型 {model_name} 失敗: {type(e).__name__}: {e}")
+                time.sleep(3 * (attempt + 1))
 
     raise RuntimeError("無法從 Gemini API 取得回覆，請稍後重試。")
 
