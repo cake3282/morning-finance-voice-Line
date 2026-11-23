@@ -12,7 +12,7 @@ import requests
 
 LINE_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_USER_ID = os.environ["LINE_USER_ID"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 AUDIO_PUBLIC_URL = os.environ.get("AUDIO_PUBLIC_URL", "")
 
 RSS_FEEDS = [
