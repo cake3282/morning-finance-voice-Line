@@ -10,7 +10,7 @@ import edge_tts
 import feedparser
 import requests
 
-LINE_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 AUDIO_PUBLIC_URL = os.environ.get("AUDIO_PUBLIC_URL", "")
 
@@ -145,7 +145,8 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 近期財經新聞與摘要：
 {news_digest}
 """
-    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-lite"]
+    # 修正模型名稱，優先使用穩定的 2.0-flash 與 1.5-flash
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
 
     for model_name in models_to_try:
         for attempt in range(2):
@@ -156,7 +157,7 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
                 return clean_script_for_weekend(raw_text, is_weekend)
             except Exception as e:
                 log(f"模型 {model_name} 失敗: {type(e).__name__}: {e}")
-                time.sleep(3)
+                time.sleep(5)
 
     raise RuntimeError("無法從 Gemini API 取得回覆，請稍後重試。")
 
@@ -187,10 +188,9 @@ def send_line(text: str, audio_url: str = "") -> None:
         "Authorization": f"Bearer {LINE_TOKEN}",
     }
 
-    # 訊息 1：晨報逐字稿文字
+    # 精準控制為 2 則訊息：1 則文字 + 1 則語音
     messages = [{"type": "text", "text": text[:5000]}]
 
-    # 訊息 2：語音檔（直接接在逐字稿後面發送，不另外發提示文字）
     if audio_url:
         messages.append({
             "type": "audio",
@@ -201,16 +201,25 @@ def send_line(text: str, audio_url: str = "") -> None:
     payload = {"messages": messages}
     resp = requests.post(url, headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
-    log("LINE 訊息廣播成功！")
+    log("LINE 訊息廣播成功！共發送 2 則訊息。")
 
 
 def main() -> None:
     now_tw = datetime.now(ZoneInfo("Asia/Taipei"))
     news_digest = fetch_headlines()
     script = generate_script(news_digest, now_tw)
+    
+    # 存檔供除錯或備份
+    with open("briefing.txt", "w", encoding="utf-8") as f:
+        f.write(script)
+
     asyncio.run(text_to_speech(script))
-    send_line(script, AUDIO_PUBLIC_URL)
-    log("全部流程順利完成！")
+    
+    # 若在流程中已傳入音訊網址則直接廣播
+    if AUDIO_PUBLIC_URL:
+        send_line(script, AUDIO_PUBLIC_URL)
+    else:
+        log("提示：未設定 AUDIO_PUBLIC_URL，將在 GitHub Release 步驟後由 Workflow 進行推播。")
 
 
 if __name__ == "__main__":
