@@ -1,0 +1,47 @@
+name: Daily Morning Finance Briefing (LINE)
+
+on:
+  schedule:
+    - cron: '0 23 * * *'  # UTC 23:00 = 台灣時間 07:00
+  workflow_dispatch:      # 支援手動觸發
+
+jobs:
+  run-line-briefing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install feedparser edge-tts requests google-genai
+
+      - name: Generate briefing text & mp3
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python briefing_line.py
+
+      - name: Upload MP3 to GitHub Release
+        id: upload_mp3
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: audio-latest
+          files: briefing.mp3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send Audio Message to LINE
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          AUDIO_PUBLIC_URL: https://github.com/${{ github.repository }}/releases/download/audio-latest/briefing.mp3
+        run: |
+          python -c "from briefing_line import send_line; import os; send_line('【財經晨報語音】請收聽今日語音晨報：', os.environ['AUDIO_PUBLIC_URL'])"
