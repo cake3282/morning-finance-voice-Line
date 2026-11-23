@@ -40,4 +40,93 @@ def clean_html_text(raw_html: str) -> str:
     return text
 
 
-def fetch_headlines(limit: int = 10, summary_max_len:
+def fetch_headlines(limit: int = 10, summary_max_len: int = 150) -> str:
+    log("開始抓取 RSS 新聞...")
+    items = []
+    seen_titles = set()
+
+    for url in RSS_FEEDS:
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=10)
+            feed = feedparser.parse(resp.content)
+        except Exception as e:
+            log(f"抓取 RSS 失敗 ({url}): {e}")
+            continue
+
+        for entry in feed.entries[:8]:
+            title = clean_html_text(entry.get("title", ""))
+            pub_date = clean_html_text(entry.get("published", ""))
+            raw_summary = entry.get("summary") or entry.get("description") or ""
+            summary = clean_html_text(raw_summary)
+
+            if summary and summary.lower() == title.lower():
+                summary = ""
+
+            if len(summary) > summary_max_len:
+                summary = summary[:summary_max_len].rstrip() + "..."
+
+            if title and title not in seen_titles:
+                seen_titles.add(title)
+                line = f"- 標題：{title}"
+                if pub_date:
+                    line += f"（時間：{pub_date}）"
+                if summary:
+                    line += f"\n  摘要：{summary}"
+                items.append(line)
+
+            if len(items) >= limit:
+                break
+        if len(items) >= limit:
+            break
+
+    log(f"RSS 抓取完成，共 {len(items)} 則。")
+    return "\n".join(items)
+
+
+def clean_script_for_weekend(text: str, is_weekend: bool) -> str:
+    if not is_weekend:
+        return text
+    cleaned = re.sub(r"(今日|今天)(台股|美股|股市)?(即將|準備)?(開盤|盤前)", "本週市場", text)
+    return cleaned
+
+
+def generate_script(news_digest: str, now_tw: datetime) -> str:
+    log("開始呼叫 Gemini 生成晨報稿...")
+    client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options={"timeout": 30},
+    )
+    weekday_map = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
+    today_str = now_tw.strftime("%Y年%m月%d日")
+    weekday_str = weekday_map[now_tw.weekday()]
+    is_weekend = now_tw.weekday() >= 5
+
+    if is_weekend:
+        mode_instruction = (
+            f"今天是 {today_str}（{weekday_str}），屬於週末休市日，台股與美股今天不開盤。"
+            "請以「本週市場焦點回顧」與「下週觀察重點」為主。"
+            "嚴格禁止說「今天開盤」、「盤前觀察」或把過去日期當成今天。"
+        )
+    else:
+        mode_instruction = (
+            f"今天是 {today_str}（{weekday_str}），屬於交易日早晨。"
+            "請聚焦隔夜美股與科技/半導體焦點、台股盤前觀察與重要政經或匯率訊號。"
+        )
+
+    prompt = f"""
+你是每天早上七點播報的財經主播。現在時間是台灣時間 {today_str}（{weekday_str}）。
+{mode_instruction}
+
+請根據以下財經新聞標題與摘要，寫一份約 550 到 750 字（朗讀約 2.5 到 3.5 分鐘）的繁體中文晨報口語稿。
+要求：
+1. 依據標題與摘要的事實脈絡撰寫，不要自行腦補未提到的數字或事件。
+2. 專為「語音朗讀」撰寫：使用自然口語、完整句子，不要用 Markdown 星號、條列符號或難唸的縮寫堆砌；股票代號或英文專有名詞請附上好唸的中文稱呼（例如特斯拉、輝達、標普五百、那斯達克）。
+3. 開頭問候早安並清楚說出今天是 {today_str} {weekday_str}，結尾提醒投資人留意風險與市場波動。
+
+近期財經新聞與摘要：
+{news_digest}
+"""
+    models_to_try = ["gemini-3.5-flash", "gemini-3.5-lite", "gemini-3.8-flash"]
+
+    for model_name in models_to_try:
+        for attempt in range(2):
