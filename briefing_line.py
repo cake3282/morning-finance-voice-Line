@@ -130,3 +130,73 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 
     for model_name in models_to_try:
         for attempt in range(2):
+            try:
+                log(f"嘗試模型 {model_name}（第 {attempt + 1} 次）...")
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                raw_text = (resp.text or "").strip()
+                if not raw_text:
+                    raise ValueError("回傳內容為空")
+                log(f"模型 {model_name} 成功產稿！")
+                return clean_script_for_weekend(raw_text, is_weekend)
+            except Exception as e:
+                log(f"模型 {model_name} 失敗: {e}")
+                time.sleep(2)
+
+    raise RuntimeError("無法從 Gemini API 取得回覆，請稍後重試。")
+
+
+async def _save_tts(text: str, mp3_path: str) -> None:
+    communicate = edge_tts.Communicate(text=text, voice="zh-TW-HsiaoChenNeural")
+    await communicate.save(mp3_path)
+
+
+async def text_to_speech(text: str, mp3_path: str = "briefing.mp3") -> None:
+    log("開始合成語音 (edge-tts)...")
+    for attempt in range(2):
+        try:
+            await asyncio.wait_for(_save_tts(text, mp3_path), timeout=45)
+            log("語音合成完成！")
+            return
+        except Exception as e:
+            log(f"edge-tts 第 {attempt + 1} 次失敗或逾時: {e}")
+            await asyncio.sleep(3)
+    raise RuntimeError("edge-tts 語音合成逾時或失敗")
+
+
+def send_line(text: str, audio_url: str = "") -> None:
+    log("開始推播至 LINE...")
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_TOKEN}",
+    }
+
+    messages = [{"type": "text", "text": text[:5000]}]
+
+    if audio_url:
+        messages.append({
+            "type": "audio",
+            "originalContentUrl": audio_url,
+            "duration": 180000,
+        })
+
+    payload = {"to": LINE_USER_ID, "messages": messages}
+    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+    log("LINE 訊息推播成功！")
+
+
+def main() -> None:
+    now_tw = datetime.now(ZoneInfo("Asia/Taipei"))
+    news_digest = fetch_headlines()
+    script = generate_script(news_digest, now_tw)
+    asyncio.run(text_to_speech(script))
+    send_line(script, AUDIO_PUBLIC_URL)
+    log("全部流程順利完成！")
+
+
+if __name__ == "__main__":
+    main()
