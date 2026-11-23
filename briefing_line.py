@@ -187,8 +187,10 @@ def send_line(text: str, audio_url: str = "") -> None:
         "Authorization": f"Bearer {LINE_TOKEN}",
     }
 
+    # 訊息 1：晨報逐字稿文字
     messages = [{"type": "text", "text": text[:5000]}]
 
+    # 訊息 2：語音檔（直接接在逐字稿後面發送，不另外發提示文字）
     if audio_url:
         messages.append({
             "type": "audio",
