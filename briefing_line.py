@@ -14,7 +14,6 @@ LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 AUDIO_PUBLIC_URL = os.environ.get("AUDIO_PUBLIC_URL", "")
 
-# 拆分為美股與台股獨立 RSS 來源
 US_RSS_FEEDS = [
     "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC,^IXIC,NVDA,TSLA,AAPL,MSFT,AVGO,MU,MRVL,AMD&region=US&lang=en-US",
 ]
@@ -147,12 +146,13 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 你是每天早上七點播報的財經主播。現在時間是台灣時間 {today_str}（{weekday_str}）。
 {mode_instruction}
 
-請根據以下財經新聞標題與摘要，寫一份約 550 到 750 字（朗讀約 2.5 到 3.5 分鐘）的繁體中文晨報口語稿。
+請根據以下財經新聞標題與摘要，寫一份約 700 到 800 字（朗讀時間精準控制在約 3 分鐘）的繁體中文晨報口語稿。
 要求：
 1. **內容比重**：美股與台股的篇幅與分析比重必須各占約 50%，兼顧兩地市場焦點。
-2. 依據標題與摘要的事實脈絡撰寫，不要自行腦補未提到的數字或事件。
-3. 專為「語音朗讀」撰寫：使用自然親切的口語、完整句子，不要用 Markdown 星號、條列符號或難唸的縮寫堆砌；股票代號或英文專有名詞請附上好唸的中文稱呼（例如特斯拉、輝達、台積電、聯發科）。
-4. 開頭親切問候早安並清楚說出今天是 {today_str} {weekday_str}，結尾提醒投資人留意風險與市場波動。
+2. **播放時間**：文字總量請控制在 700 至 800 字之間，確保語音朗讀時長恰好約為 3 分鐘。
+3. 依據標題與摘要的事實脈絡撰寫，不要自行腦補未提到的數字或事件。
+4. 專為「語音朗讀」撰寫：使用自然親切的口語、完整句子，不要用 Markdown 星號、條列符號或難唸的縮寫堆砌；股票代號或英文專有名詞請附上好唸的中文稱呼（例如特斯拉、輝達、台積電、聯發科）。
+5. 開頭親切問候早安並清楚說出今天是 {today_str} {weekday_str}，結尾提醒投資人留意風險與市場波動。
 
 近期財經新聞與摘要：
 {news_digest}
@@ -174,13 +174,13 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 
 
 async def _save_tts(text: str, mp3_path: str) -> None:
-    # 改為年輕好聽的女聲：zh-TW-HsiaoYuNeural
-    communicate = edge_tts.Communicate(text=text, voice="zh-TW-HsiaoYuNeural", rate="+10%")
+    # 換回原聲音：zh-TW-HsiaoChenNeural
+    communicate = edge_tts.Communicate(text=text, voice="zh-TW-HsiaoChenNeural")
     await communicate.save(mp3_path)
 
 
 async def text_to_speech(text: str, mp3_path: str = "briefing.mp3") -> None:
-    log("開始合成語音 (edge-tts zh-TW-HsiaoYuNeural)...")
+    log("開始合成語音 (edge-tts zh-TW-HsiaoChenNeural)...")
     for attempt in range(2):
         try:
             await asyncio.wait_for(_save_tts(text, mp3_path), timeout=45)
@@ -206,7 +206,7 @@ def send_line(text: str, audio_url: str = "") -> None:
         messages.append({
             "type": "audio",
             "originalContentUrl": audio_url,
-            "duration": 180000,
+            "duration": 180000, # 標示為 3 分鐘 (180,000 ms)
         })
 
     payload = {"messages": messages}
