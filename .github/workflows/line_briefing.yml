@@ -2,7 +2,7 @@ name: Daily Morning Finance Briefing (LINE)
 
 on:
   schedule:
-    - cron: '0 18 * * *'  # UTC 22:00 = 台灣時間 06:00
+    - cron: '0 15 * * *'  # UTC 22:00 = 台灣時間 06:00
   workflow_dispatch:
 
 jobs:
