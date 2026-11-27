@@ -9,13 +9,11 @@ from zoneinfo import ZoneInfo
 import edge_tts
 import feedparser
 import requests
-from google import genai
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-BOT_TOKEN = os.environ["TG_BOT_TOKEN"]
-CHAT_ID = os.environ["TG_CHAT_ID"]
+LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+AUDIO_PUBLIC_URL = os.environ.get("AUDIO_PUBLIC_URL", "")
 
-# 拆分為美股與台股獨立 RSS 來源
 US_RSS_FEEDS = [
     "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC,^IXIC,NVDA,TSLA,AAPL,MSFT,AVGO,MU,MRVL,AMD&region=US&lang=en-US",
 ]
@@ -49,7 +47,7 @@ def fetch_category_headlines(feeds: list, limit: int = 5, summary_max_len: int =
 
     for url in feeds:
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=15)
             feed = feedparser.parse(resp.content)
         except Exception as e:
             log(f"抓取 RSS 失敗 ({url}): {e}")
@@ -100,9 +98,33 @@ def clean_script_for_weekend(text: str, is_weekend: bool) -> str:
     return cleaned
 
 
+def call_gemini_rest(model_name: str, prompt: str, timeout_sec: int = 45) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    params = {"key": GEMINI_API_KEY}
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": prompt}]
+            }
+        ]
+    }
+    resp = requests.post(url, params=params, json=payload, timeout=timeout_sec)
+    resp.raise_for_status()
+    data = resp.json()
+
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise ValueError(f"沒有回傳 candidates: {data}")
+
+    parts = ((candidates[0].get("content") or {}).get("parts")) or []
+    text = "".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
+    if not text:
+        raise ValueError(f"回傳文字為空: {data}")
+    return text
+
+
 def generate_script(news_digest: str, now_tw: datetime) -> str:
     log("開始呼叫 Gemini 生成晨報稿...")
-    client = genai.Client(api_key=GEMINI_API_KEY)
     weekday_map = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
     today_str = now_tw.strftime("%Y年%m月%d日")
     weekday_str = weekday_map[now_tw.weekday()]
@@ -134,21 +156,17 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 近期財經新聞與摘要：
 {news_digest}
 """
-    models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]
+    models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash"]
 
     for model_name in models_to_try:
         for attempt in range(2):
             try:
                 log(f"嘗試模型 {model_name}（第 {attempt + 1} 次）...")
-                resp = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
-                raw_text = resp.text.strip()
+                raw_text = call_gemini_rest(model_name, prompt, timeout_sec=45)
                 log(f"模型 {model_name} 成功產稿！")
                 return clean_script_for_weekend(raw_text, is_weekend)
             except Exception as e:
-                log(f"模型 {model_name} 失敗: {e}")
+                log(f"模型 {model_name} 失敗: {type(e).__name__}: {e}")
                 time.sleep(5)
 
     raise RuntimeError("無法從 Gemini API 取得回覆，請稍後重試。")
@@ -167,4 +185,49 @@ async def text_to_speech(text: str, mp3_path: str = "briefing.mp3") -> None:
             log("語音合成完成！")
             return
         except Exception as e:
-            log(f"edge-tts 第 {attempt + 1} 次失敗或逾時: {
+            log(f"edge-tts 第 {attempt + 1} 次失敗或逾時: {e}")
+            await asyncio.sleep(3)
+    raise RuntimeError("edge-tts 語音合成逾時或失敗")
+
+
+def send_line(text: str, audio_url: str = "") -> None:
+    log("開始廣播至 LINE...")
+    url = "https://api.line.me/v2/bot/message/broadcast"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_TOKEN}",
+    }
+
+    messages = [{"type": "text", "text": text[:5000]}]
+
+    if audio_url:
+        messages.append({
+            "type": "audio",
+            "originalContentUrl": audio_url,
+            "duration": 180000,
+        })
+
+    payload = {"messages": messages}
+    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+    log("LINE 訊息廣播成功！共發送 2 則訊息。")
+
+
+def main() -> None:
+    now_tw = datetime.now(ZoneInfo("Asia/Taipei"))
+    news_digest = fetch_balanced_headlines()
+    script = generate_script(news_digest, now_tw)
+
+    with open("briefing.txt", "w", encoding="utf-8") as f:
+        f.write(script)
+
+    asyncio.run(text_to_speech(script))
+
+    if AUDIO_PUBLIC_URL:
+        send_line(script, AUDIO_PUBLIC_URL)
+    else:
+        log("提示：未設定 AUDIO_PUBLIC_URL，將在 GitHub Release 步驟後由 Workflow 進行推播。")
+
+
+if __name__ == "__main__":
+    main()
