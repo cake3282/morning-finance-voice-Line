@@ -19,7 +19,7 @@ US_RSS_FEEDS = [
 ]
 
 TW_RSS_FEEDS = [
-    "https://news.google.com/rss/search?q=%E5%8F%B0%E8%82%A1+%E5%8D%8A%E5%B0%8E%E9%AB%94+%E7%B6%93%E6%BF%9F+when:2d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+    "https://news.google.com/rss/search?q=%E5%8F%B0%E8%82%A1+%E5%8D%8A%E5%B0%8E%E9%AB%94+%E6%A9%9F%E5%99%A8%E4%BA%BA+%E7%B6%93%E6%BF%9F+when:2d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
 ]
 
 HEADERS = {
@@ -133,26 +133,25 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
     if is_weekend:
         mode_instruction = (
             f"今天是 {today_str}（{weekday_str}），屬於週末休市日，台股與美股今天不開盤。"
-            "請以「本週台美股市場回顧」與「下週觀察重點」為主，台股與美股內容各占一半。"
+            "請以「本週台美股市場回顧」與「下週觀察重點」為主，美股與台股內容各占約 50%。"
             "嚴格禁止說「今天開盤」、「盤前觀察」或把過去日期當成今天。"
         )
     else:
         mode_instruction = (
             f"今天是 {today_str}（{weekday_str}），屬於交易日早晨。"
-            "請將報導比重嚴格分為兩大部分（各占 50%）：第一部分為隔夜美股與科技半導體動態，第二部分為台股盤前觀察與重點產業評析。"
+            "請將報導比重嚴格分為兩大部分（各占約 50%）：前半段聚焦隔夜美股、人工智慧與半導體焦點；"
+            "後半段聚焦台股盤前觀察、產業趨勢與可留意的產業方向及代表性個股。"
         )
 
     prompt = f"""
 你是每天早上七點播報的財經主播。現在時間是台灣時間 {today_str}（{weekday_str}）。
 {mode_instruction}
 
-請根據以下財經新聞標題與摘要，寫一份約 700 到 800 字（朗讀時間精準控制在約 3 分鐘）的繁體中文晨報口語稿。
-要求：
-1. **內容比重**：美股與台股的篇幅與分析比重必須各占約 50%，兼顧兩地市場焦點。
-2. **播放時間**：文字總量請控制在 700 至 800 字之間，確保語音朗讀時長恰好約為 3 分鐘。
-3. 依據標題與摘要的事實脈絡撰寫，不要自行腦補未提到的數字或事件。
-4. 專為「語音朗讀」撰寫：使用自然親切的口語、完整句子，不要用 Markdown 星號、條列符號或難唸的縮寫堆砌；股票代號或英文專有名詞請附上好唸的中文稱呼（例如特斯拉、輝達、台積電、聯發科）。
-5. 開頭親切問候早安並清楚說出今天是 {today_str} {weekday_str}，結尾提醒投資人留意風險與市場波動。
+請根據以下財經新聞標題與摘要，寫一份約 700 到 800 字（朗讀時間約 3 分鐘）的繁體中文晨報口語稿。
+撰寫風格與結構要求：
+1. **開場與結尾精簡**：開頭一句話問候早安並點出今天是 {today_str} {weekday_str} 與台美股各半重點，不要冗長鋪陳；結尾簡短提醒留意波動與風險、祝投資順利即可。
+2. **台美股各占 50%**：美股與台股篇幅各半。美股部分圍繞隔夜股市、人工智慧晶片、大型科技股或重點企業動態；台股部分結合盤前氣氛、關稅或產業支撐訊號，並務實說明接下來可關注的產業方向（例如半導體先進製程與封測、AI伺服器與散熱、機器人與自動化設備等）以及市場常留意的代表性個股（如台積電、聯發科、鴻海、廣達、台達電或機器人與自動化相關供應鏈），語氣客觀務實，不講不切實際的保證或誇大預測。
+3. **事實依據與口語化**：新聞事件與數字請依據提供的標題與摘要脈絡撰寫，勿自行捏造新聞數據；使用自然口語與完整句子，避免 Markdown 星號、條列符號或難唸縮寫，英文代號請附上好唸的中文稱呼（例如輝達、特斯拉、博通、美光、標普五百、那斯達克）。
 
 近期財經新聞與摘要：
 {news_digest}
@@ -174,7 +173,6 @@ def generate_script(news_digest: str, now_tw: datetime) -> str:
 
 
 async def _save_tts(text: str, mp3_path: str) -> None:
-    # 換回原聲音：zh-TW-HsiaoChenNeural
     communicate = edge_tts.Communicate(text=text, voice="zh-TW-HsiaoChenNeural")
     await communicate.save(mp3_path)
 
@@ -206,7 +204,7 @@ def send_line(text: str, audio_url: str = "") -> None:
         messages.append({
             "type": "audio",
             "originalContentUrl": audio_url,
-            "duration": 180000, # 標示為 3 分鐘 (180,000 ms)
+            "duration": 180000,
         })
 
     payload = {"messages": messages}
